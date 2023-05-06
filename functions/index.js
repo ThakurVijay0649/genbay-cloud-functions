@@ -1,94 +1,28 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const uuid = require('uuid');
 
 admin.initializeApp(
   {
     credential: admin.credential.applicationDefault(),
-    databaseURL: "http://127.0.0.1:9000/?ns=genbay-116d4-default-rtdb",
+    databaseURL: "http://127.0.0.1:9500/?ns=genbay-116d4-default-rtdb",
   }
 );
 
 //! This is notifications collections reference in the firestore database.
 const notifications = admin.firestore().collection('notifications');
-const notificationRef = notifications.doc();
 
 //! This function will send a notification to all the members of the event when an event is created.
 exports.eventCreated = functions.firestore
   .document('/events/{eventId}')
   .onCreate(async (snapshot, context) => {
     const eventData = snapshot.data();
-    const selectedMembers = eventData.selectedMembers;
     const eventName = eventData.name;
-
-    try {
-      const messagePromises = await selectedMembers.map(async (memberId) => {
-        console.log('Member Id', memberId);
-        const tokensRef = admin.database().ref(`/users/${memberId}/tokens`);
-        const tokensSnapshot = await tokensRef.once('value');
-        const tokens = tokensSnapshot.val();
-        if (!tokens) {
-          console.log(`Tokens not found for user ${memberId}`);
-          return null;
-        } else {
-          tokens.forEach((token) => {
-            console.log(`Token is ${token}`);
-          });
-          const user = await getUserWithId(eventData.userId);
-          var dateString = ""
-          if (eventData.isDateConfirmed == true) {
-            let dateTimestamp = eventData.dateTimestamp
-            const dateObj = new Date(dateTimestamp * 1000); // Convert to milliseconds
-            const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: '2-digit', day: '2-digit', year: 'numeric' });
-            dateString = formattedDate
-            console.log("date is confirmed")
-            console.log("dateString:", dateString)
-          } else {
-            console.log("date is not confirmed")
-            dateString = "TBD"
-          }
-          const payload = {
-            message: `${user.firstName} ${user.lastName} RSVP’d for ${eventData.name} | ${eventData.startTime} ${eventData.date}`,
-            userImage: user.imageUrl,
-            visibleTo: memberId,
-            userId: eventData.userId,
-            timeStamp: Date.now(),
-          }
-          const message = {
-            notification: {
-              title: String(eventName),
-              body: `Event ${eventName} has been created`
-            },
-            data: {
-              type: 'eventCreated',
-              info: JSON.stringify(payload)
-            },
-            tokens: tokens
-          };
-          //!This is the notification object which will be stored in the firestore notifications collection.
-          const newNotification = {
-            type: message.data.type,
-            info: JSON.parse(message.data.info),
-            tokens: tokens,
-            id: notificationRef.id,
-            status: 'unread',
-          }
-          await notificationRef.set(newNotification);
-          message.data.info = JSON.stringify(message.data.info);
-          return admin.messaging().sendEachForMulticast(message);
-        }
-      });
-
-      let messages = await Promise.all(messagePromises);
-      messages.forEach((message) => {
-        const successfulResponses = message.responses.filter((response) => response.success);
-        successfulResponses.forEach((response) => {
-          console.log('Response', JSON.stringify(response));
-        });
-      });
-
-    } catch (error) {
-      console.log('Error sending message:', error);
+    if (eventData.isVisibleToAllSelected == true) {
+      const selectedMembers = await getUserFriends(eventData.userId);
+      await sendEventNotification(eventData, selectedMembers, eventName);
+    } else {
+      const selectedMembers = eventData.selectedMembers;
+      await sendEventNotification(eventData, selectedMembers, eventName);
     }
 
     return null;
@@ -101,92 +35,29 @@ exports.eventUpdated = functions.firestore
   .document("/events/{eventId}")
   .onUpdate(async (snapshot, context) => {
     const eventData = snapshot.after.data();
-    const selectedMembers = eventData.selectedMembers;
     const eventName = eventData.name;
-    console.log("Event Data", JSON.stringify(eventData));
-    try {
-      const messagePromises = await selectedMembers.map(async (memberId) => {
-        console.log('Member Id', memberId);
-        const tokensRef = admin.database().ref(`/users/${memberId}/tokens`);
-        const tokensSnapshot = await tokensRef.once('value');
-        const tokens = tokensSnapshot.val();
-        if (!tokens) {
-          console.log(`Tokens not found for user ${memberId}`);
-          return null;
-        } else {
-          tokens.forEach((token) => {
-            console.log(`Token is ${token}`);
-          });
-          const user = await getUserWithId(eventData.userId);
-          var dateString = ""
-          if (eventData.isDateConfirmed == true) {
-            let dateTimestamp = eventData.dateTimestamp
-            const dateObj = new Date(dateTimestamp * 1000); // Convert to milliseconds
-            const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: '2-digit', day: '2-digit', year: 'numeric' });
-            dateString = formattedDate
-            console.log("date is confirmed")
-            console.log("dateString:", dateString)
-          } else {
-            console.log("date is not confirmed")
-            dateString = "TBD"
-          }
-          const payload = {
-            message: `${user.firstName} ${user.lastName} RSVP’d for ${eventData.name} | ${eventData.startTime} ${dateString}`,
-            userImage: user.imageUrl,
-            visibleTo: memberId,
-            userId: eventData.userId,
-            timeStamp: Date.now(),
-          }
-          const message = {
-            notification: {
-              title: String(eventName),
-              body: `Event ${eventName} has been updated`
-            },
-            data: {
-              type: 'eventUpdated',
-              info: JSON.stringify(payload)
-            },
-            tokens: tokens
-          };
-
-          //!This is the notification object which will be stored in the firestore notifications collection.
-          const newNotification = {
-            type: message.data.type,
-            info: JSON.parse(message.data.info),
-            tokens: tokens,
-            id: notificationRef.id,
-            status: 'unread',
-          }
-          await notificationRef.set(newNotification);
-          message.data.info = JSON.stringify(message.data.info);
-          return admin.messaging().sendEachForMulticast(message);
-        }
-      });
-
-      let messages = await Promise.all(messagePromises);
-      messages.forEach((message) => {
-        const successfulResponses = message.responses.filter((response) => response.success);
-        successfulResponses.forEach((response) => {
-          console.log('Response', JSON.stringify(response));
-        });
-      });
-
-    } catch (error) {
-      console.log('Error sending message:', error);
+    const beforeEventData = snapshot.before.data();
+    if (eventData.isVisibleToAllSelected == true) {
+      const selectedMembers = await getUserFriends(eventData.userId);
+      await sendEventNotification(eventData, selectedMembers, eventName);
+    } else {
+      if (eventData.selectedMembers.length >= beforeEventData.selectedMembers.length) {
+        const selectedMembers = eventData.selectedMembers;
+        await sendEventNotification(eventData, selectedMembers, eventName);
+      } else {
+        console.log("Member has been removed from the event")
+      }
     }
-
     return null;
 
   });
 
-//!This function will be called when a user sends a friend request to another user.
+//*This function will be called when a user sends a friend request to another user.
 exports.friendRequestSent = functions.database
   .ref("/friends/{userId}/pendingList/{index}")
   .onCreate(async (snapshot, context) => {
     const friendIndex = context.params.index;
     const userId = context.params.userId;
-    console.log("Friend index", friendIndex);
-    console.log("User Id", userId);
     try {
       const pendingListRef = admin.database().ref(`/friends/${userId}/pendingList`);
       const pendingListSnapshot = await pendingListRef.once('value');
@@ -196,7 +67,6 @@ exports.friendRequestSent = functions.database
         return null;
       } else {
         const friendId = pendingList[friendIndex];
-        console.log("Friend Id", friendId);
         const tokensRef = admin.database().ref(`/users/${friendId}/tokens`);
         const tokensSnapshot = await tokensRef.once('value');
         const tokens = tokensSnapshot.val();
@@ -208,8 +78,7 @@ exports.friendRequestSent = functions.database
             console.log(`Token is ${token}`);
           });
           const friend = await getUserWithId(friendId);
-
-          //!this is the payload which will be sent as an info in the notification data.
+          //!This is the payload which will be sent to the client.
           const payload = {
             message: `You have a new friend request from ${friend.firstName} ${friend.lastName}`,
             userImage: friend.imageUrl,
@@ -217,6 +86,7 @@ exports.friendRequestSent = functions.database
             userId: friendId,
             timeStamp: Date.now(),
           }
+          //!This is the message object which will be sent to the client.
           const message = {
             notification: {
               title: "Friend Request",
@@ -228,15 +98,19 @@ exports.friendRequestSent = functions.database
             },
             tokens: tokens
           };
-          //!This is the notification object which will be stored in the firestore notifications collection.
+          //!This is the document reference of the document with document id: - userId.
+          const userDocRef = notifications.doc(userId);
+          await userDocRef.set({ id: userId }, { merge: true });
+          const notificationRef = userDocRef.collection('notificationsList');
+          let autoId = notificationRef.doc().id;
+          //!This is the notification object which will be stored in the firestore notifications collection inside the userDocRef document.
           const newNotification = {
             type: message.data.type,
             info: JSON.parse(message.data.info),
-            tokens: tokens,
-            id: notificationRef.id,
-            status: 'unread',
+            id: autoId,
+            status: 0,
           }
-          await notificationRef.set(newNotification);
+          await notificationRef.doc(autoId).set(newNotification);
           message.data.info = JSON.stringify(message.data.info);
           return admin.messaging().sendEachForMulticast(message);
         }
@@ -248,14 +122,12 @@ exports.friendRequestSent = functions.database
     return null;
   });
 
-//!This function will be called when a user accepts a friend request.
+//*This function will be called when a user accepts a friend request.
 exports.friendRequestAccepted = functions.database
   .ref("/friends/{userId}/acceptedList/{index}")
   .onCreate(async (snapshot, context) => {
     const friendIndex = context.params.index;
     const userId = context.params.userId;
-    console.log("Friend index", friendIndex);
-    console.log("User Id", userId);
     try {
       const acceptedListRef = admin.database().ref(`/friends/${userId}/acceptedList`);
       const acceptedListSnapshot = await acceptedListRef.once('value');
@@ -265,7 +137,6 @@ exports.friendRequestAccepted = functions.database
         return null;
       } else {
         const friendId = acceptedList[friendIndex];
-        console.log("Friend Id", friendId);
         const tokensRef = admin.database().ref(`/users/${friendId}/tokens`);
         const tokensSnapshot = await tokensRef.once('value');
         const tokens = tokensSnapshot.val();
@@ -277,6 +148,7 @@ exports.friendRequestAccepted = functions.database
             console.log(`Token is ${token}`);
           });
           const user = await getUserWithId(userId);
+          //!This is the payload which will be sent to the client.
           const payload = {
             message: `${user.firstName} ${user.lastName} has accepted your friend request!`,
             userImage: user.imageUrl,
@@ -284,6 +156,7 @@ exports.friendRequestAccepted = functions.database
             userId: userId,
             timeStamp: Date.now()
           }
+          //!This is the message object which will be sent to the client.
           const message = {
             notification: {
               title: "Friend Request Accepted",
@@ -295,15 +168,19 @@ exports.friendRequestAccepted = functions.database
             },
             tokens: tokens
           };
-          //!This is the notification object which will be stored in the firestore notifications collection.
+          //!This is the document reference of the document with document id: - friendId.
+          const friendDocRef = notifications.doc(friendId);
+          await friendDocRef.set({ id: friendId }, { merge: true });
+          const notificationRef = friendDocRef.collection('notificationsList');
+          let autoId = notificationRef.doc().id;
+          //!This is the notification object which will be stored in the firestore notifications collection inside the friendDocRef document.
           const newNotification = {
             type: message.data.type,
             info: JSON.parse(message.data.info),
-            tokens: tokens,
-            id: notificationRef.id,
-            status: 'unread',
+            id: autoId,
+            status: 0,
           }
-          await notificationRef.set(newNotification);
+          await notificationRef.doc(autoId).set(newNotification);
           message.data.info = JSON.stringify(message.data.info);
           return admin.messaging().sendEachForMulticast(message);
         }
@@ -315,7 +192,7 @@ exports.friendRequestAccepted = functions.database
     return null;
   });
 
-
+//! Method to get the user with the given userId.
 async function getUserWithId(userId) {
   const userRef = admin.database().ref(`/users/${userId}`);
   const userSnapshot = await userRef.once('value');
@@ -329,13 +206,89 @@ async function getUserWithId(userId) {
   }
 }
 
+async function getUserFriends(userId) {
+  const userFriendsRef = admin.database().ref(`/friends/${userId}/acceptedList`);
+  const userFriendsSnapshot = await userFriendsRef.once('value');
+  const userFriends = userFriendsSnapshot.val();
+  if (!userFriends) {
+    console.log(`Friends not found for user ${userId}`);
+    return null;
+  } else {
+    console.log("User Friends", userFriends);
+    return userFriends;
+  }
+}
 
-// id: eventData.id,
-// name: eventData.name,
-// date: eventData.date,
-// startTime: eventData.startTime,
-// createdAt: Date.now(),
-// hostId: eventData.userId,
-// visibleTo: memberId,
-// hostName: `${user.firstName} ${user.lastName}`,
-// hostImageUrl: user.imageUrl,
+async function sendEventNotification(eventData, selectedMembers, eventName) {
+  try {
+    const messagePromises = await selectedMembers.map(async (memberId) => {
+      const tokensRef = admin.database().ref(`/users/${memberId}/tokens`);
+      const tokensSnapshot = await tokensRef.once('value');
+      const tokens = tokensSnapshot.val();
+      if (!tokens) {
+        console.log(`Tokens not found for user ${memberId}`);
+        return null;
+      } else {
+        tokens.forEach((token) => {
+          console.log(`Token is ${token}`);
+        });
+        const user = await getUserWithId(eventData.userId);
+        var dateString = ""
+        if (eventData.isDateConfirmed == true) {
+          let dateTimestamp = eventData.dateTimestamp
+          const dateObj = new Date(dateTimestamp * 1000); // Convert to milliseconds
+          const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: '2-digit', day: '2-digit', year: 'numeric' });
+          dateString = formattedDate
+        } else {
+          dateString = "TBD"
+        }
+        //!This is the payload which will be sent to the client.
+        const payload = {
+          message: `${user.firstName} ${user.lastName} RSVP’d for ${eventData.name} | ${eventData.startTime} ${dateString}`,
+          userImage: user.imageUrl,
+          visibleTo: memberId,
+          userId: eventData.userId,
+          timeStamp: Date.now(),
+        }
+        //!This is the message object which will be sent to the client.
+        const message = {
+          notification: {
+            title: String(eventName),
+            body: `Event ${eventName} has been updated`
+          },
+          data: {
+            type: 'eventUpdated',
+            info: JSON.stringify(payload)
+          },
+          tokens: tokens
+        };
+        //!This is the document reference of the document with document id: - memberId.
+        const memberDocRef = notifications.doc(memberId);
+        await memberDocRef.set({ id: memberId }, { merge: true });
+        const notificationRef = memberDocRef.collection('notificationsList');
+        let autoId = notificationRef.doc().id;
+        //!This is the notification object which will be stored in the firestore notifications collection inside the memberDocRef document.
+        const newNotification = {
+          type: message.data.type,
+          info: JSON.parse(message.data.info),
+          id: autoId,
+          status: 0,
+        }
+        await notificationRef.doc(autoId).set(newNotification);
+        message.data.info = JSON.stringify(message.data.info);
+        return admin.messaging().sendEachForMulticast(message);
+      }
+    });
+
+    let messages = await Promise.all(messagePromises);
+    messages.forEach((message) => {
+      const successfulResponses = message.responses.filter((response) => response.success);
+      successfulResponses.forEach((response) => {
+        console.log('Response', JSON.stringify(response));
+      });
+    });
+
+  } catch (error) {
+    console.log('Error sending message:', error);
+  }
+}
