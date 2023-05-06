@@ -1,0 +1,10 @@
+10:05:20.656 [NamespaceSystem-akka.actor.default-dispatcher-4] INFO akka.event.slf4j.Slf4jLogger - Slf4jLogger started
+10:05:21.202 [main] INFO com.firebase.server.forge.App$ - Listening at 127.0.0.1:9000
+10:05:38.727 [NamespaceSystem-akka.actor.default-dispatcher-5] INFO com.firebase.core.namespace.NamespaceActor - genbay-116d4-default-rtdb successfully activated FBKV (SurveyIdle(0)) wait: 1164ms, init: 0ms
+10:05:39.081 [NamespaceSystem-blocking-namespace-operation-dispatcher-6] INFO com.firebase.core.namespace.StateManager - Namespace genbay-116d4-default-rtdb status Active to Active
+10:05:39.284 [NamespaceSystem-blocking-namespace-operation-dispatcher-6] INFO com.firebase.core.namespace.StateManager - Namespace genbay-116d4-default-rtdb status Active to Active
+10:05:56.770 [FirebaseWorkerPool-1-2] WARN com.firebase.core.persistence.backend.dummy.EmulatorMetadataPersistence - Multiple projectIds are not recommended in single project mode. Requested 
+namespace genbay-116d4, but the emulator is configured for genbay-116d4-default-rtdb. To 
+opt-out of single project mode add/set the single_project_mode: false property in 
+the firebase.json emulators config. 
+10:05:56.802 [NamespaceSystem-akka.actor.default-dispatcher-4] INFO com.firebase.core.namespace.NamespaceActor - genbay-116d4 successfully activated FBKV (SurveyIdle(0)) wait: 12ms, init: 0ms

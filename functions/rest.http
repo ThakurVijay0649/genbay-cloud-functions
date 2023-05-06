@@ -1,0 +1,17 @@
+GET http://127.0.0.1:5001/genbay-116d4/us-central1/api
+
+###
+POST http://127.0.0.1:5001/genbay-116d4/us-central1/api
+Content-Type: application/json
+
+{
+    "name": "test",
+    "email": "vijay@gmail.com"
+}
+
+###
+DELETE http://127.0.0.1:5001/genbay-116d4/us-central1/api
+
+
+###
+PUT  http://127.0.0.1:5001/genbay-116d4/us-central1/api
